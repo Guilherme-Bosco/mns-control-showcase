@@ -82,7 +82,7 @@ Access control via JWT with custom claims. SuperAdmin bypasses the tenant filter
 ```mermaid
 flowchart TB
     WA["WhatsApp"]
-    Zap["Zapster API"]
+    Zap["WAHA API"]
     GPT["OpenAI<br/>GPT-4.1-mini"]
     Redis[("Redis<br/>buffer, state, session")]
 
@@ -121,7 +121,7 @@ flowchart TB
 | Database | Supabase (PostgreSQL) | Single source of truth, multi-tenant RLS, automatic triggers |
 | Automation | n8n 2.17.7 self-hosted (VPS) | 13 workflows orchestrating agent, automations, and actions |
 | Cache and state | Redis | Message buffer, agent-pause control, per-phone session |
-| Messaging | Zapster API | Sending and receiving WhatsApp, one instance per tenant |
+| Messaging | WAHA API | Sending and receiving WhatsApp, one instance per tenant |
 | AI | OpenAI GPT-4.1-mini | Engine of the conversational agent |
 | Deploy | Vercel (front) and VPS (backend) | CI/CD on push to GitHub |
 
@@ -208,7 +208,7 @@ The combination of AI agent + dashboard + automations fully replaced the previou
 
 ### Service capacity
 
-With the old model, running more than one client in parallel wasn't viable. With MNS Control, the practical limit became my capacity to create Zapster instances and configure AI agents. A second client is in onboarding.
+With the old model, running more than one client in parallel wasn't viable. With MNS Control, the practical limit became my capacity to create WAHA instances and configure AI agents. A second client is in onboarding.
 
 ### Onboarding a new manager
 
@@ -237,7 +237,7 @@ Scope discipline is a differentiator. Resisting the temptation to add everything
 
 ### Technical ones already on the plan to fix
 
-- The `zapster_instance_id` is hardcoded per workflow. To scale without editing workflows by hand, it needs to be fetched from the `tenants` table.
+- The `waha_instance_id` is hardcoded per workflow. To scale without editing workflows by hand, it needs to be fetched from the `tenants` table.
 - The AI agent's system prompt is fixed per workflow. It should be configurable per tenant from the database.
 - Automatic notification to the end customer when they reschedule or cancel doesn't send WhatsApp yet. Today it's a deliberate choice of the pilot client, but it should be a per-tenant toggle.
 
@@ -259,7 +259,7 @@ Scope discipline is a differentiator. Resisting the temptation to add everything
 
 - Onboarding the second client in production
 - A screen to edit message templates per tenant
-- Dynamic lookup of `zapster_instance_id` in the `tenants` table
+- Dynamic lookup of `waha_instance_id` in the `tenants` table
 - Final SVG logo (current one is a placeholder)
 - Custom domain (`app.mindinshift.com.br`)
 - Possible: a visual editor for the AI agent's system prompt
@@ -276,10 +276,10 @@ Scope discipline is a differentiator. Resisting the temptation to add everything
 - **Database.** PostgreSQL via Supabase, 8 main tables, multi-tenant RLS with custom functions (`get_user_tenant_id`, `get_user_role`), PL/pgSQL trigger `atualizar_status_cliente`.
 - **Cache and state.** Redis with a key pattern of `mns:{slug}:{phone}:{type}`.
 - **Automation.** n8n with 13 workflows: 1 AI agent, 6 shared automations, 5 dashboard webhooks, 1 centralized error handler.
-- **Messaging.** Zapster API, one WhatsApp instance per tenant, credential via HTTP header.
+- **Messaging.** WAHA API, one WhatsApp instance per tenant, credential via HTTP header.
 - **AI.** OpenAI GPT-4.1-mini for the conversational agent.
 - **Auth.** Supabase Auth with email and password, JWT with custom claims, Next.js middleware redirecting by role.
-- **Hosting.** Vercel (frontend), VPS with Traefik reverse proxy (n8n, Redis, Zapster integration).
+- **Hosting.** Vercel (frontend), VPS with Traefik reverse proxy (n8n, Redis, WAHA integration).
 - **Observability.** Error Center fed by the n8n Error Handler. No dedicated APM yet.
 
 ---
