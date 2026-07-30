@@ -1,289 +1,294 @@
 # MNS Control
 
-> Plataforma operacional dos clientes da [Mind in Shift](https://mindinshift.com.br).
-> Dashboard multi-tenant com CRM de serviços, automações de follow-up, confirmação de agendamento, notificação de serviço e remarketing pós-atendimento (90 dias).
-> Os clientes da agência operam o dia a dia pelo dashboard. A agência acompanha todos os tenants pelo painel SuperAdmin.
+[Português](./README.md) | English
 
-![Status](https://img.shields.io/badge/status-em%20produ%C3%A7%C3%A3o-success) ![Stack](https://img.shields.io/badge/stack-Next.js%20%C2%B7%20Supabase%20%C2%B7%20n8n-1f2937) ![Multi-tenant](https://img.shields.io/badge/multi--tenant-RLS%20nativa-8b5cf6)
+> Operational platform for the clients of [Mind in Shift](https://mindinshift.com.br).
+> Multi-tenant dashboard with service CRM, follow-up automations, appointment confirmation, service notifications, and 90-day post-service remarketing.
+> The agency's clients run day-to-day operations through the dashboard. The agency monitors all tenants through the SuperAdmin panel.
 
-> 📌 Este repositório é um case study técnico do MNS Control. O código-fonte é fechado. Aqui você encontra a arquitetura, decisões técnicas e o estado atual do projeto.
+![Status](https://img.shields.io/badge/status-in%20production-success) ![Stack](https://img.shields.io/badge/stack-Next.js%20%C2%B7%20Supabase%20%C2%B7%20n8n-1f2937) ![Multi-tenant](https://img.shields.io/badge/multi--tenant-native%20RLS-8b5cf6)
 
----
-
-## O problema
-
-A Mind in Shift opera com dois fundadores e sem time fixo. Eu cuido da parte técnica, a Micaela cuida do comercial e do design. Cada cliente que a gente fecha recebe um agente conversacional via WhatsApp que qualifica leads, agenda serviços e dispara follow-up automático.
-
-Funcionava. Só que tinha um detalhe.
-
-A operação do dia a dia rodava por comandos de texto. O gestor do nosso primeiro cliente piloto digitava `#concluido`, `#cancelar 5512999999999`, `#reagendar 5512999999999 15/06/2026 14:00` no próprio WhatsApp. O agente IA atendia o cliente final, gravava no Supabase, e eu acompanhava as coisas direto no painel do banco e nos logs do n8n.
-
-Pra um cliente, dava conta. Pra dois, virava impossível.
-
-### Os quatro problemas concretos, em ordem de dor
-
-1. **Comandos eram frágeis.** Sintaxe específica, erro de digitação resultava em falha silenciosa. Nada respondia, nada confirmava, e o gestor descobria horas depois que o agendamento não tinha sido gravado.
-2. **Sem visão consolidada.** "Quantos agendamentos eu tenho amanhã?" exigia consulta manual no banco. Não tinha onde olhar.
-3. **Pendência virava mensagem perdida.** Quando o cliente final pedia cancelamento ou remarcação pelo WhatsApp, a Gisele (nosso agente IA) registrava, mas a notificação ia como mensagem solta no WhatsApp do gestor. Mensagem some no meio das outras.
-4. **Era impossível escalar.** Adicionar um segundo cliente significaria duplicar tudo manualmente, sem isolamento entre operações. Cada gestor novo teria que aprender uma sintaxe diferente de comandos.
-
-A virada veio quando a agência começou a prospectar ativamente. Ficou claro: ou eu construía uma interface profissional naquele momento, ou a operação travava no primeiro cliente.
+> 📌 This repository is a technical case study of MNS Control. Source code is closed. Here you'll find the architecture, technical decisions, and the current state of the project.
 
 ---
 
-## De comandos no WhatsApp ao dashboard profissional
+## The problem
 
-O MNS Control não veio pra substituir o agente. Veio pra dar uma cara humana à mesma operação.
+Mind in Shift runs with two founders and no fixed team. I handle the technical side, Micaela handles sales and design. Every client we close gets a WhatsApp conversational agent that qualifies leads, schedules services, and triggers automatic follow-up.
 
-O agente continua atendendo no WhatsApp, gravando no banco, qualificando leads. O dashboard é a interface visual sobre essa operação, lado a lado:
+It worked. But there was a catch.
 
-| Antes | Depois |
+Day-to-day operations ran through text commands. The manager of our first pilot client would type `#concluido`, `#cancelar 5512999999999`, `#reagendar 5512999999999 15/06/2026 14:00` on his own WhatsApp. The AI agent handled the end customer, wrote to Supabase, and I tracked things directly through the database panel and n8n logs.
+
+For one client, it was manageable. For two, it became impossible.
+
+### The four concrete problems, in order of pain
+
+1. **Commands were fragile.** Specific syntax, and a typing error would result in silent failure. Nothing responded, nothing confirmed, and the manager would find out hours later that the appointment hadn't been saved.
+2. **No consolidated view.** "How many appointments do I have tomorrow?" required manual database queries. There was nowhere to look.
+3. **Pending items became lost messages.** When the end customer requested cancellation or rescheduling via WhatsApp, Gisele (our AI agent) would record it, but the notification came as a loose WhatsApp message to the manager. Messages disappear in the flood.
+4. **Scaling was impossible.** Adding a second client would mean manually duplicating everything, without isolation between operations. Every new manager would have to learn a different command syntax.
+
+The turning point came when the agency started actively prospecting. It became clear: either I built a professional interface right then, or the operation would break with the first client.
+
+---
+
+## From WhatsApp commands to a professional dashboard
+
+MNS Control didn't come to replace the agent. It came to give the same operation a human face.
+
+The agent still handles WhatsApp conversations, writes to the database, and qualifies leads. The dashboard is the visual interface over that operation, side by side:
+
+| Before | After |
 |---|---|
-| Gestor digita `#concluido` no WhatsApp e torce | Gestor clica em "Concluir" no card do atendimento |
-| "Quantos agendamentos amanhã?" virava consulta manual | Tela de Agenda mostra hoje, amanhã, próximos 7 dias |
-| Pendência chegava como mensagem que podia passar batido | Pendência abre card vermelho que exige ação |
-| Suporte a um cliente, sem isolamento | N clientes com RLS, cada um vê só o que é dele |
+| Manager types `#concluido` on WhatsApp and hopes for the best | Manager clicks "Complete" on the service card |
+| "How many appointments tomorrow?" was a manual query | Schedule screen shows today, tomorrow, next 7 days |
+| A pending item arrived as a message that could go unnoticed | A pending item opens a red card demanding action |
+| One-client support, no isolation | N clients with RLS, each seeing only their own data |
 
-Construí em camadas. A primeira tela foi o Pipeline (lista de atendimentos com ações). Depois Agenda. Depois Pendências. Cada tela entregue removia um pedaço da fragilidade anterior. Quando o gestor parou de digitar comandos no WhatsApp e começou a usar só o dashboard, foi o sinal de que a primeira metade do problema tinha sido resolvida.
-
----
-
-## A solução
-
-Dashboard web multi-tenant que consome a mesma base de dados que o agente IA grava. Os módulos cobrem os contextos de uso do dia a dia.
-
-### Módulos
-
-- **Dashboard.** Visão geral por tenant: serviços ativos, faturamento previsto e realizado, ticket médio, próximo agendamento, conversão semanal, atividade recente.
-- **Pipeline.** Todos os serviços em andamento com ações inline (editar, agendar, mudar status, ver detalhes).
-- **Agenda.** Agendamentos organizados por período, com ações de remarcar, concluir ou cancelar.
-- **Pendências.** Cancelamentos e remarcações que o cliente final pediu pelo WhatsApp e que ainda aguardam ação do gestor.
-- **Leads.** Funil de conversão: novos, qualificando, frios, descartados, com ação de enviar pro pipeline.
-- **Métricas.** Funil completo, faturamento por período, ticket médio, top 5 serviços, clientes por cidade, taxa de cancelamento, tempo médio até agendamento.
-- **Central de Erros** (SuperAdmin). Erros dos workflows n8n registrados automaticamente, com severidade e ação de resolver.
-- **Configurações.** Perfil, dados do negócio, horários de atendimento, automações, gestão de usuários.
-
-### Como cada papel usa
-
-**SuperAdmin** (eu mesmo, na prática). Abro o painel uma vez por dia, vejo status geral de todos os tenants, resolvo erros críticos se aparecerem, ranqueio quem está ativo. Cinco a dez minutos.
-
-**Gestor do tenant.** Abre o dashboard, vê pendências e agendamentos do dia, confere o Pipeline pra orçamentos pendentes, agenda serviços, executa, marca como concluído, fecha as pendências do dia.
-
-**Operador.** Papel previsto pra crescimento, sem caso real ainda. Vê só a agenda do dia em modo execução.
-
-Controle de acesso por JWT com claims customizados. SuperAdmin bypassa o filtro de tenant. Gestor enxerga apenas o tenant dele. Operador enxerga apenas a agenda dele. O middleware do Next.js (`proxy.ts`) redireciona por role automaticamente.
+I built it in layers. The first screen was the Pipeline (list of services with actions). Then Schedule. Then Pending. Each delivered screen removed a piece of the previous fragility. When the manager stopped typing commands on WhatsApp and started using only the dashboard, that was the signal that the first half of the problem had been solved.
 
 ---
 
-## Arquitetura
+## The solution
+
+Multi-tenant web dashboard that reads from the same database the AI agent writes to. The modules cover day-to-day usage contexts.
+
+### Modules
+
+- **Dashboard.** Tenant overview: active services, projected and realized revenue, average ticket, next appointment, weekly conversion, recent activity.
+- **Pipeline.** All ongoing services with inline actions (edit, schedule, change status, view details).
+- **Schedule.** Appointments organized by time period, with actions to reschedule, complete, or cancel.
+- **Pending.** Cancellations and reschedulings the end customer requested via WhatsApp that still await manager action.
+- **Leads.** Conversion funnel: new, qualifying, cold, discarded, with an action to send to the pipeline.
+- **Metrics.** Full funnel, revenue by period, average ticket, top 5 services, clients by city, cancellation rate, average time to appointment.
+- **Error Center** (SuperAdmin). Errors from n8n workflows registered automatically, with severity and a resolve action.
+- **Settings.** Profile, business data, working hours, automations, user management.
+
+### How each role uses it
+
+**SuperAdmin** (me, in practice). I open the panel once a day, see general status of all tenants, resolve critical errors if they appear, rank who's active. Five to ten minutes.
+
+**Tenant manager.** Opens the dashboard, sees pending items and appointments for the day, checks the Pipeline for pending quotes, schedules services, executes them, marks as complete, closes the day's pending items.
+
+**Operator.** A role designed for growth, no real case yet. Sees only the day's schedule in execution mode.
+
+Access control via JWT with custom claims. SuperAdmin bypasses tenant filtering. Manager only sees their own tenant. Operator only sees their own schedule. Next.js middleware (`proxy.ts`) redirects by role automatically.
+
+---
+
+## Architecture
 
 ```mermaid
 flowchart TB
     WA["WhatsApp"]
-    Zap["Zapster API"]
+    WAHA["WAHA API"]
     GPT["OpenAI<br/>GPT-4.1-mini"]
-    Redis[("Redis<br/>buffer, estado, sessão")]
+    Redis[("Redis<br/>buffer, state, session")]
 
-    subgraph n8n_layer["n8n self-hosted, 13 workflows"]
-        Agent["Agente IA<br/>WF1 Gisele"]
-        Auto["Automações compartilhadas<br/>confirmação, lembrete, recontratação,<br/>follow-up, pendências"]
-        Webhooks["Webhooks do dashboard<br/>concluir, cancelar, agendar, remarcar"]
-        ErrHandler["Error Handler<br/>centralizado"]
+    subgraph n8n_layer["n8n self-hosted, 14 workflows"]
+        Agent["AI Agent<br/>WF1 Gisele"]
+        Auto["Shared automations<br/>confirmation, reminder, re-hire,<br/>follow-up, pending, billing"]
+        Webhooks["Dashboard webhooks<br/>complete, cancel, schedule, reschedule"]
+        ErrHandler["Centralized<br/>Error Handler"]
     end
 
-    Browser["Navegador"]
+    Browser["Browser"]
     NextJS["Next.js 16<br/>Vercel"]
-    Supabase[("Supabase<br/>PostgreSQL com RLS<br/>multi-tenant")]
+    Supabase[("Supabase<br/>PostgreSQL with RLS<br/>multi-tenant")]
 
-    WA <--> Zap
-    Zap <--> Agent
-    Zap <--> Auto
+    WA <--> WAHA
+    WAHA <--> Agent
+    WAHA <--> Auto
     Agent <--> GPT
     Agent <--> Redis
 
     Browser --> NextJS
     NextJS <--> Supabase
-    NextJS -->|ações| Webhooks
+    NextJS -->|actions| Webhooks
     Webhooks --> Supabase
     Auto --> Supabase
     Agent --> Supabase
     ErrHandler --> Supabase
 ```
 
-### Camadas
+### Layers
 
-| Camada | Tecnologia | Responsabilidade |
+| Layer | Technology | Responsibility |
 |---|---|---|
 | Frontend | Next.js 16, TypeScript, Tailwind, shadcn/ui | SSR, Server Components, Server Actions |
-| Backend | Next.js (leitura) e n8n (orquestração de ações) | Sem API REST dedicada, Supabase SDK chamado server-side |
-| Banco | Supabase (PostgreSQL) | Fonte única de verdade, RLS multi-tenant, triggers automáticos |
-| Automação | n8n 2.17.7 self-hosted (VPS) | 13 workflows orquestrando agente, automações e ações |
-| Cache e estado | Redis | Buffer de mensagens, controle de pausa do agente, sessão por telefone |
-| Mensageria | Zapster API | Envio e recebimento de WhatsApp, uma instância por tenant |
-| IA | OpenAI GPT-4.1-mini | Motor do agente conversacional |
-| Deploy | Vercel (front) e VPS (backend) | CI/CD por push no GitHub |
+| Backend | Next.js (reads) and n8n (action orchestration) | No dedicated REST API, Supabase SDK called server-side |
+| Database | Supabase (PostgreSQL) | Single source of truth, multi-tenant RLS, automatic triggers |
+| Automation | n8n 2.17.7 self-hosted (VPS) | 14 workflows orchestrating agent, automations, and actions |
+| Cache and state | Redis | Message buffer, agent pause control, session per phone |
+| Messaging | WAHA API | WhatsApp send and receive, one instance per tenant |
+| AI | OpenAI GPT-4.1-mini | Conversational agent engine |
+| Deploy | Vercel (frontend) and VPS (backend) | CI/CD via GitHub push |
 
 ### Multi-tenancy
 
-Isolamento por Row-Level Security nativa do PostgreSQL. Cada tenant tem `tenant_id` em todas as 8 tabelas principais. As policies de RLS usam duas funções customizadas que leem do JWT:
+Isolation via PostgreSQL's native Row-Level Security. Every tenant has `tenant_id` in all 8 main tables. RLS policies use two custom functions that read from the JWT:
 
-- `get_user_tenant_id()` retorna o tenant do usuário autenticado.
-- `get_user_role()` retorna o role. SuperAdmin bypassa o filtro de tenant.
+- `get_user_tenant_id()` returns the authenticated user's tenant.
+- `get_user_role()` returns the role. SuperAdmin bypasses tenant filtering.
 
-A consequência prática: mesmo que alguém acesse a API direto com token válido, o banco bloqueia no nível mais baixo possível. O frontend confia que o banco já filtrou. Não precisa lembrar de aplicar `where tenant_id = ?` em lugar nenhum.
+Practical consequence: even if someone hits the API directly with a valid token, the database blocks it at the lowest possible level. The frontend trusts that the database has already filtered. There's no need to remember to apply `where tenant_id = ?` anywhere.
 
-### A "outra face da moeda"
+### The "other side of the coin"
 
-Quando eu estava desenhando o sistema, a primeira pergunta foi se o dashboard ia falar com o agente IA via API. Decidi que não. O dashboard escreve direto no Supabase. O agente também. Eles compartilham banco, não conversam entre si.
+When I was designing the system, the first question was whether the dashboard would talk to the AI agent via API. I decided not. The dashboard writes directly to Supabase. So does the agent. They share the database, they don't talk to each other.
 
-| Quem age | Onde escreve | Quem vê |
+| Who acts | Where they write | Who sees it |
 |---|---|---|
-| Cliente final manda mensagem no WhatsApp | Agente IA grava em `clientes`, `atendimentos`, `leads` | Gestor vê no dashboard em tempo real |
-| Gestor clica "Concluir" no dashboard | Webhook do n8n atualiza `atendimentos` | Cliente final recebe confirmação no WhatsApp |
-| Trigger PL/pgSQL detecta mudança de status | Atualiza `clientes.status_lead` automaticamente | Toda interface reflete |
+| End customer sends a WhatsApp message | AI agent writes to `clientes`, `atendimentos`, `leads` | Manager sees it on the dashboard in real time |
+| Manager clicks "Complete" on the dashboard | n8n webhook updates `atendimentos` | End customer receives confirmation on WhatsApp |
+| PL/pgSQL trigger detects status change | Automatically updates `clientes.status_lead` | Every interface reflects it |
 
-Essa escolha simplificou a arquitetura mais do que eu imaginava no começo. Não existe "API do agente" nem "API do dashboard". Existe o banco. E dois clientes que conversam com ele.
-
----
-
-## Decisões técnicas
-
-Algumas escolhas valeram debate antes de virar código.
-
-### 1. Quando o gestor clica em "Concluir", a chamada vai pro n8n, não pra uma API interna
-
-Quando o gestor termina um serviço, ele aperta um botão e várias coisas precisam acontecer em sequência: cancelar disparos pendentes, criar serviço de recontratação 90 dias depois, atualizar a tabela de cliente, notificar pelo WhatsApp. Toda essa orquestração já existia como fluxo no n8n.
-
-Eu podia ter replicado isso numa API route do Next. Não fiz. Aceitei a latência extra de 1 ou 2 segundos e a dependência do n8n estar de pé, em troca de manter a lógica de negócio num lugar só.
-
-Se o n8n cair, as ações do dashboard caem junto. Mas o dashboard em leitura continua funcionando. Foi a troca certa.
-
-### 2. RLS no banco, não filtro multi-tenant no código
-
-Todo o isolamento entre clientes é feito via policies do PostgreSQL, não via condicional no frontend.
-
-Segurança no nível mais baixo possível. Mesmo que alguém ataque a API diretamente com token válido de outro tenant, o banco recusa. O frontend não precisa lembrar de filtrar porque não tem como esquecer.
-
-O preço foi debugging mais difícil. Queries que retornavam vazio sem erro visível foram a maior fonte de bug durante os testes (faltavam policies de `INSERT` e `UPDATE` em algumas tabelas, e o banco só fica em silêncio quando uma policy não bate). Aceitei. Prefiro errar pelo silêncio do RLS do que vazar dado entre clientes.
-
-### 3. Trigger automático de status, não lógica no frontend
-
-Quando um atendimento muda de status, uma função PL/pgSQL chamada `atualizar_status_cliente` recalcula automaticamente `status_lead`, `status_cliente`, `total_atendimentos` e `valor_total_gasto` na tabela `clientes`.
-
-Garante consistência independente de quem atualiza. Dashboard, agente IA ou manipulação direta no banco resultam todos no mesmo estado final.
-
-A contrapartida é que a lógica fica "escondida" no banco. Eu preciso lembrar que ela existe quando vou depurar comportamento estranho. Mas o ganho de consistência supera o custo de memória.
+This choice simplified the architecture more than I imagined at first. There's no "agent API" or "dashboard API". There's the database. And two clients that talk to it.
 
 ---
 
-## Resultados operacionais
+## Technical decisions
 
-Não é métrica de conversão de produto. É ganho operacional dentro da agência.
+Some choices were worth debating before turning into code.
 
-### Tempo economizado
+### 1. When the manager clicks "Complete", the call goes to n8n, not to an internal API
 
-Estimo entre 8 e 12 horas por semana, comparando a operação antiga (gestão por comandos, monitoramento direto no banco, consultas manuais) com a operação atual (gestor self-service no dashboard, painel SuperAdmin pra mim).
+When the manager finishes a service, they press a button and several things need to happen in sequence: cancel pending dispatches, create a re-hire service 90 days later, update the client table, notify via WhatsApp. All this orchestration already existed as a flow in n8n.
 
-### Processos que antes eram informais
+I could have replicated it as a Next.js API route. I didn't. I accepted the extra 1 to 2 second latency and the dependency on n8n being up, in exchange for keeping business logic in a single place.
 
-- Todo lead que chega pelo WhatsApp tem registro automático com status rastreável. Antes ficava só na conversa.
-- Qualificação gera atendimento no Pipeline com dados estruturados. Antes era texto livre no chat.
-- Pendências viram card com ação obrigatória. Antes era mensagem que podia passar batido.
-- Follow-up de lead frio é automático em quatro estágios. Antes era manual e esquecido.
+If n8n goes down, dashboard actions go down with it. But the dashboard in read mode keeps working. It was the right trade.
 
-### Validação em produção: Gênios Clean
+### 2. RLS in the database, not multi-tenant filtering in the code
 
-Primeiro cliente em produção. Empresa de higienização de estofados em Jacareí-SP. Operando o MNS Control há ~3 meses, com agente IA (Gisele) integrado ao dashboard.
+All client isolation is done via PostgreSQL policies, not via conditionals in the frontend.
 
-Números acumulados no período:
+Security at the lowest possible level. Even if someone attacks the API directly with a valid token from another tenant, the database refuses. The frontend doesn't need to remember to filter because there's no way to forget.
 
-- **34+ clientes** cadastrados via agente IA, com dados estruturados
-- **10+ atendimentos** executados ponta a ponta pelo gestor via dashboard
-- **18+ avaliações** coletadas automaticamente no Google via follow-up pós-serviço
-- **4 automações** de disparo ativas: confirmação 24h antes do serviço, lembrete 1h antes, follow-up pós-serviço com solicitação de review, e recontratação automática 90 dias depois
+The price was harder debugging. Queries returning empty with no visible error were the biggest source of bugs during testing (some tables were missing `INSERT` and `UPDATE` policies, and the database only stays silent when a policy doesn't match). I accepted it. I'd rather err via RLS silence than leak data between clients.
 
-A combinação agente IA + dashboard + automações substituiu integralmente o modelo anterior baseado em comandos via WhatsApp. O gestor opera tudo pela tela.
+### 3. Automatic status trigger, not frontend logic
 
-### Capacidade de atendimento
+When a service changes status, a PL/pgSQL function called `atualizar_status_cliente` automatically recalculates `status_lead`, `status_cliente`, `total_atendimentos`, and `valor_total_gasto` in the `clientes` table.
 
-Com o modelo antigo, operar mais de um cliente em paralelo não era viável. Com o MNS Control, o limite prático passou a ser a capacidade de criar instâncias Zapster e configurar agentes IA. Segundo cliente em processo de onboarding.
+It ensures consistency regardless of who's updating. Dashboard, AI agent, or direct database manipulation all result in the same final state.
 
-### Onboarding de gestor novo
-
-Cerca de 30 minutos de demonstração ao vivo mais um manual de 13 páginas em PDF. O sistema é intuitivo o suficiente pra começar a operar logo depois da reunião.
+The trade-off is that the logic sits "hidden" in the database. I need to remember it exists when debugging strange behavior. But the consistency gain beats the cognitive cost.
 
 ---
 
-## O que decidi não construir, e por quê
+## Operational results
 
-Disciplina de escopo é diferencial. Resistir à tentação de adicionar tudo mantém o foco no que importa.
+This isn't product conversion metrics. It's operational gain inside the agency.
 
-- **Chat interno ou viewer de conversas WhatsApp.** Tentador. Mas duplicaria o WhatsApp na mão do gestor, que já está usando o WhatsApp do celular o tempo todo. Esforço alto, ganho marginal.
-- **Financeiro e faturamento.** O sistema registra valor do serviço, mas não gera nota fiscal nem boleto. Cada cliente já tem ferramenta financeira. Misturar isso aqui seria expandir escopo sem necessidade.
-- **Agendamento drag-and-drop no calendário.** A Agenda é read-only com ações via modal (data, horário, confirma). Mais simples de manter e o fluxo dá conta.
-- **App nativo mobile.** O dashboard é responsivo e funciona no navegador do celular. App nativo teria custo de manutenção sem ganho proporcional agora.
+### Time saved
 
-### O que ainda é feito fora do MNS Control
+I estimate between 8 and 12 hours per week, comparing the old operation (management by commands, direct database monitoring, manual queries) with the current operation (self-service manager on the dashboard, SuperAdmin panel for me).
 
-- O system prompt e o FAQ do agente IA são editados direto no n8n. Edição rara, não justifica tela dedicada por enquanto.
-- Financeiro interno da própria agência fica em planilha. Não faz sentido misturar com a ferramenta operacional dos clientes.
-- Comunicação com clientes da agência é por WhatsApp direto. O MNS Control gerencia os clientes dos clientes, não os clientes da Mind in Shift.
+### Processes that used to be informal
+
+- Every lead arriving via WhatsApp has an automatic record with trackable status. It used to stay in the conversation.
+- Qualification creates a Pipeline service with structured data. It used to be free text in chat.
+- Pending items become cards with mandatory action. They used to be messages that could slip through.
+- Cold lead follow-up is automatic across four stages. It used to be manual and forgotten.
+
+### Production validation: Gênios Clean
+
+First client in production. Upholstery cleaning company in Jacareí-SP, Brazil. Operating MNS Control for ~3 months, with the AI agent (Gisele) integrated to the dashboard.
+
+Accumulated numbers over the period:
+
+- **34+ clients** registered via AI agent, with structured data
+- **10+ services** executed end-to-end by the manager through the dashboard
+- **18+ reviews** automatically collected on Google via post-service follow-up
+- **4 dispatch automations** active: confirmation 24h before service, reminder 1h before, post-service follow-up requesting review, and automatic re-hire 90 days later
+
+The combination of AI agent + dashboard + automations fully replaced the previous model based on WhatsApp commands. The manager runs everything through the screen.
+
+### Service capacity
+
+With the old model, running more than one client in parallel wasn't viable. With MNS Control, the practical limit became the capacity to create WAHA instances and configure AI agents. Second client is being onboarded.
+
+### New manager onboarding
+
+Around 30 minutes of live demo plus a 13-page PDF manual. The system is intuitive enough to start operating right after the meeting.
 
 ---
 
-## Limitações conhecidas
+## What I chose not to build, and why
 
-### Técnicas que já estão no plano de resolver
+Scope discipline is a differentiator. Resisting the temptation to add everything keeps focus on what matters.
 
-- O `zapster_instance_id` está hardcoded por workflow. Pra escalar sem editar workflows manualmente, precisa buscar da tabela `tenants`.
-- O system prompt do agente IA é fixo por workflow. Deveria ser configurável por tenant a partir do banco.
-- Notificação automática ao cliente final quando remarca ou cancela ainda não envia WhatsApp. Hoje é decisão consciente do cliente piloto, mas deveria ser toggle por tenant.
+- **Internal chat or WhatsApp conversation viewer.** Tempting. But it would duplicate WhatsApp in the manager's hands, when they're already using WhatsApp on their phone all the time. High effort, marginal gain.
+- **Full financial and billing management.** The system has one specific automation for recurring billing via Abacate Pay (post-service webhook for the 90-day re-hire), but it doesn't generate invoices, doesn't issue one-off bills, and doesn't manage accounts payable. Every client already has dedicated financial tools, and expanding scope to become an ERP would lose product focus.
+- **Drag-and-drop calendar scheduling.** The Schedule is read-only with actions via modal (date, time, confirm). Simpler to maintain and the flow handles it.
+- **Native mobile app.** The dashboard is responsive and works in the phone browser. A native app would have maintenance cost without proportional gain right now.
 
-### Dívida técnica consciente
+### What still happens outside MNS Control
 
-- Sem testes automatizados. Validação foi 100% manual durante os ciclos. Aceitável no MVP interno, vai precisar antes de escalar pra mais clientes.
-- Sem APM dedicado além da Central de Erros. Não tenho métricas de latência, uso de memória, throughput.
-- Algumas telas (Leads, Pendências) ainda têm tabela com scroll horizontal no mobile em vez de cards responsivos.
-
-### Cenários onde o sistema não funciona bem
-
-- Se o n8n cair, as ações do dashboard falham silenciosamente. O frontend exibe "sucesso" antes da resposta do webhook. Precisa de verificação de resposta mais robusta.
-- Conflito de edição simultânea entre dois gestores no mesmo atendimento resulta em last-write-wins, sem aviso.
-- Volume alto de leads simultâneos (acima de 50 mensagens por minuto) ainda não foi testado em produção. O buffer Redis pode precisar de ajuste.
+- The AI agent's system prompt and FAQ are edited directly in n8n. Rare edits don't justify a dedicated screen for now.
+- The agency's own internal financials sit in a spreadsheet. It doesn't make sense to mix with the clients' operational tool.
+- Communication with agency clients happens on WhatsApp directly. MNS Control manages the clients' clients, not Mind in Shift's clients.
 
 ---
 
-## Roadmap (próximos 3 a 6 meses)
+## Known limitations
 
-- Onboarding do segundo cliente em produção
-- Tela de edição de templates de mensagem por tenant
-- Busca dinâmica do `zapster_instance_id` na tabela `tenants`
-- Logo SVG definitivo (placeholder atual)
-- Domínio customizado (`app.mindinshift.com.br`)
-- Possível: editor visual do system prompt do agente IA
+### Technical issues already in the resolution plan
 
-> O MNS Control é parte do serviço da Mind in Shift, não produto vendido separadamente. Os clientes contratam a agência pela implementação do agente IA mais a operação mensal, e o dashboard vem incluído como ferramenta de gestão da própria operação deles.
-> A arquitetura multi-tenant já suporta licenciamento pra outras agências se aparecer demanda, mas isso seria decisão de negócio, não técnica.
+- The `waha_instance_id` is hardcoded per workflow. To scale without manually editing workflows, it needs to be fetched from the `tenants` table.
+- The AI agent's system prompt is fixed per workflow. It should be configurable per tenant from the database.
+- Automatic end-customer notification when rescheduling or canceling doesn't send WhatsApp yet. Today it's a conscious pilot-client decision, but it should be a per-tenant toggle.
+
+### Conscious technical debt
+
+- No automated tests. Validation was 100% manual during cycles. Acceptable for an internal MVP, will be needed before scaling to more clients.
+- No dedicated APM beyond the Error Center. I have no latency, memory usage, or throughput metrics.
+- Some screens (Leads, Pending) still have tables with horizontal scroll on mobile instead of responsive cards.
+
+### Scenarios where the system doesn't work well
+
+- If n8n goes down, dashboard actions fail silently. The frontend shows "success" before the webhook responds. Needs more robust response verification.
+- Simultaneous edit conflict between two managers on the same service results in last-write-wins, without warning.
+- High simultaneous lead volume (above 50 messages per minute) hasn't been tested in production yet. The Redis buffer might need tuning.
+
+---
+
+## Roadmap (next 3 to 6 months)
+
+- Onboarding of the second client into production
+- Message template editor per tenant
+- Dynamic lookup of `waha_instance_id` from the `tenants` table
+- Final SVG logo (current is placeholder)
+- Custom domain (`app.mindinshift.com.br`)
+- Possibly: visual editor of the AI agent's system prompt
+
+Recurring billing automation via Abacate Pay was recently incorporated as an additional workflow inside the 90-day re-hire flow. It's not a product focus and stays as a background automation, without its own interface in the dashboard.
+
+> MNS Control is part of Mind in Shift's service offering, not a product sold separately. Clients hire the agency for AI agent implementation plus monthly operations, and the dashboard comes included as a tool to manage their own operations.
+> The multi-tenant architecture already supports licensing to other agencies if demand emerges, but that would be a business decision, not a technical one.
 
 ---
 
 ## Stack
 
-- **Frontend.** Next.js 16, TypeScript, Tailwind CSS, shadcn/ui. Design system Navy (#0A1628) e Gold (#C9A84C).
-- **Backend.** Lógica distribuída entre Next.js (Server Components e Server Actions pra leitura) e n8n 2.17.7 self-hosted (orquestração de ações complexas).
-- **Banco.** PostgreSQL via Supabase, 8 tabelas principais, RLS multi-tenant com funções customizadas (`get_user_tenant_id`, `get_user_role`), trigger PL/pgSQL `atualizar_status_cliente`.
-- **Cache e estado.** Redis com padrão de keys `mns:{slug}:{phone}:{tipo}`.
-- **Automação.** n8n com 13 workflows: 1 agente IA, 6 automações compartilhadas, 5 webhooks do dashboard, 1 error handler centralizado.
-- **Mensageria.** Zapster API, uma instância WhatsApp por tenant, credencial via HTTP header.
-- **IA.** OpenAI GPT-4.1-mini pro agente conversacional.
-- **Auth.** Supabase Auth com email e senha, JWT com claims customizados, middleware Next.js redireciona por role.
-- **Hosting.** Vercel (frontend), VPS com Traefik reverse proxy (n8n, Redis, integração Zapster).
-- **Observabilidade.** Central de Erros alimentada pelo Error Handler do n8n. Sem APM dedicado ainda.
+- **Frontend.** Next.js 16, TypeScript, Tailwind CSS, shadcn/ui. Design system Navy (#0A1628) and Gold (#C9A84C).
+- **Backend.** Logic distributed between Next.js (Server Components and Server Actions for reads) and n8n 2.17.7 self-hosted (complex action orchestration).
+- **Database.** PostgreSQL via Supabase, 8 main tables, multi-tenant RLS with custom functions (`get_user_tenant_id`, `get_user_role`), PL/pgSQL trigger `atualizar_status_cliente`.
+- **Cache and state.** Redis with key pattern `mns:{slug}:{phone}:{type}`.
+- **Automation.** n8n with 14 workflows: 1 AI agent, 7 shared automations (including recurring billing via Abacate Pay), 5 dashboard webhooks, 1 centralized error handler.
+- **Messaging.** WAHA API self-hosted, one WhatsApp instance per tenant, credential via HTTP header.
+- **Payments.** Abacate Pay via webhook. Recurring billing automation triggered in the post-service flow, integrated with the 90-day re-hire cycle.
+- **AI.** OpenAI GPT-4.1-mini for the conversational agent.
+- **Auth.** Supabase Auth with email and password, JWT with custom claims, Next.js middleware redirects by role.
+- **Hosting.** Vercel (frontend), VPS with Traefik reverse proxy (n8n, Redis, WAHA).
+- **Observability.** Error Center fed by n8n's Error Handler. No dedicated APM yet.
 
 ---
 
-## Sobre
+## About
 
-Construído por [Guilherme Bosco](https://github.com/Guilherme-Bosco), co-founder da [Mind in Shift](https://mindinshift.com.br), agência de automação e IA em Jacareí-SP.
+Built by [Guilherme Bosco](https://github.com/Guilherme-Bosco), co-founder of [Mind in Shift](https://mindinshift.com.br), an automation and AI agency in Jacareí-SP, Brazil.
 
-Pra contato sobre operação de agências de automação ou consultoria técnica: [contato@mindinshift.com.br](mailto:contato@mindinshift.com.br), [LinkedIn](https://www.linkedin.com/in/guilherme-bosco-dos-santos-012bb620b/).
+For inquiries about running automation agencies or technical consulting: <contato@mindinshift.com.br>, [LinkedIn](https://www.linkedin.com/in/guilherme-bosco-dos-santos-012bb620b/).
