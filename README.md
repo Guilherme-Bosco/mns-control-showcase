@@ -109,7 +109,7 @@ flowchart TB
 
     Browser["Browser"]
     NextJS["Next.js 16<br/>Vercel"]
-    Route["/api/acao/[action]<br/>session and shared secret"]
+    Route["Server-side action route<br/>identity from the session"]
     Supabase[("Supabase<br/>PostgreSQL with RLS<br/>multi-tenant")]
 
     WA <--> WAHA
@@ -179,11 +179,11 @@ If n8n goes down, the dashboard actions go down with it. But the dashboard's rea
 
 ### 2. Every action leaves through one door, carrying the session's identity
 
-The browser doesn't call n8n. It calls `/api/acao/[action]` on our own server, and that route reads the `tenant_id` **from the session** before forwarding anything, with a shared secret that all six dashboard webhooks require.
+The browser doesn't call n8n. It calls a single server-side action route in the Next.js app, which reads the `tenant_id` **from the session** before forwarding anything, and the dashboard webhooks only accept calls that come through that route.
 
 The earlier version worked differently: the browser called the webhook directly and passed the tenant along in the payload. It never caused an incident, and I changed it anyway, during a security pass I ran before onboarding the second client. Identity that travels in a payload is a claim. Identity that comes from the session is a fact. Once more than one client is on the platform, that difference stops being philosophical.
 
-The same pass tightened the database rules around role changes and cross-tenant writes, rotated a database key that two retired workflows still carried in plain text, and put the password reset flow on our own authenticated domain. None of it was visible on screen. All of it was the difference between "it works for my pilot client" and "I can sign the next contract."
+The same pass tightened the database rules around role changes and cross-tenant writes, rotated credentials that had been left behind in retired workflows, and put the password reset flow on our own authenticated domain. None of it was visible on screen. All of it was the difference between "it works for my pilot client" and "I can sign the next contract."
 
 ### 3. RLS in the database, not a multi-tenant filter in the code
 
@@ -263,9 +263,9 @@ The workflows were writing `status: 'sent'` unconditionally, even when the send 
 
 This isn't a product conversion metric. It's an operational gain inside the agency.
 
-### Production validation: Gênios Clean
+### Production validation: the pilot client
 
-First client in production. An upholstery-cleaning company in Jacareí-SP. Running MNS Control since May 16, 2026, with the AI agent (Gisele) integrated into the dashboard.
+First client in production: an upholstery-cleaning business in the Vale do Paraíba region (SP). Running MNS Control since May 16, 2026, with the AI agent (Gisele) integrated into the dashboard.
 
 Numbers pulled from the database on August 19, 2026:
 
@@ -382,6 +382,6 @@ Scope discipline is a differentiator. Resisting the temptation to add everything
 
 ## About
 
-Built by [Guilherme Bosco](https://github.com/Guilherme-Bosco), co-founder of [Mind in Shift](https://mindinshift.com.br), an automation and AI agency in Jacareí-SP.
+Built by [Guilherme Bosco](https://github.com/Guilherme-Bosco), back-end developer focused on automation and AI agents.
 
-For contact about running automation agencies or technical consulting: <contato@mindinshift.com.br>, [LinkedIn](https://www.linkedin.com/in/guilherme-bosco-dos-santos-012bb620b/).
+Contact: [guilhermebosco23@gmail.com](mailto:guilhermebosco23@gmail.com) · [LinkedIn](https://www.linkedin.com/in/guilherme-bosco-dos-santos-012bb620b/)
