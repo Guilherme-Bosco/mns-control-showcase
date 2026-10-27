@@ -1,0 +1,318 @@
+{
+  "_comment": [
+    "Source: n8n workflow 'MNS - Monitor Sessão WAHA', published version, exported 2026-10-27. Sanitized: URLs, credentials, session, chat id, workflow ids, one operational sentence in a node note.",
+    "Shows: a 5-minute poll of every WhatsApp session; current state written to tenant_channels on every run, while the alert is an event",
+    "deduplicated by a 24 h Redis flag (one message per outage, one per recovery), sent through a different session than the one that dropped."
+  ],
+  "name": "MNS - Monitor Sessão WAHA",
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "errorWorkflow": "<ERROR_WORKFLOW_ID>",
+    "binaryMode": "separate"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/5 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "sch",
+      "name": "A cada 5 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 320]
+    },
+    {
+      "parameters": {
+        "url": "<SUPABASE_URL>/rest/v1/tenant_channels?provider=eq.waha&ativo=eq.true&select=tenant_id,waha_session_name,waha_url",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "id": "canais",
+      "name": "GET Canais",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [224, 320],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.waha_url }}/api/sessions/{{ $json.waha_session_name }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "status",
+      "name": "GET Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [448, 320],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "alerted",
+        "key": "=mns:monitor:{{ $('GET Canais').item.json.waha_session_name }}:alerted",
+        "options": {}
+      },
+      "id": "getalert",
+      "name": "Redis GET alerted",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [672, 320],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const ch = $('GET Canais').item.json;\nconst stResp = $('GET Status').item.json;\nconst body = (stResp && stResp.body) ? stResp.body : stResp;\nconst status = (body && body.status) ? body.status : 'UNREACHABLE';\nconst alerted = $json.alerted === 'true';\nconst down = status !== 'WORKING';\nlet outcome = 'none';\nif (down && !alerted) outcome = 'new_alert';\nelse if (!down && alerted) outcome = 'recovery';\n// Estado da sessao para o painel (tenant_channels.status_conexao).\n// Separado do alerta de proposito: o alerta e EVENTO e so o humano fecha;\n// isto e o ESTADO atual e o monitor reescreve a cada ciclo.\nconst MAPA = { WORKING: 'conectada', SCAN_QR_CODE: 'qr_pendente', STOPPED: 'caiu', FAILED: 'caiu' };\nconst status_conexao = MAPA[status] || 'caiu';\nconst patch = { status_conexao };\n// ultima_conexao e \"visto no ar pela ultima vez\": so avanca quando conectada,\n// senao perderiamos o instante exato da queda.\nif (status_conexao === 'conectada') patch.ultima_conexao = new Date().toISOString();\nreturn { json: { tenant_id: ch.tenant_id, session: ch.waha_session_name, status, down, outcome, status_conexao, patch } };"
+      },
+      "id": "avaliar",
+      "name": "Avaliar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 320]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "r1",
+                    "leftValue": "={{ $json.outcome }}",
+                    "rightValue": "new_alert",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "new_alert"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "r2",
+                    "leftValue": "={{ $json.outcome }}",
+                    "rightValue": "recovery",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "recovery"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "sw",
+      "name": "Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [1104, 304]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "<SUPABASE_URL>/rest/v1/erros",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "workflow", "value": "Monitor Sessão WAHA" },
+            { "name": "mensagem", "value": "=Sessão WAHA caiu: {{ $json.session }} (status {{ $json.status }})" },
+            { "name": "severidade", "value": "critico" },
+            { "name": "status", "value": "aberto" },
+            { "name": "tenant_id", "value": "={{ $json.tenant_id }}" },
+            { "name": "criado_em", "value": "={{ $now.toISO() }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "posterro",
+      "name": "POST erro",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1344, 160],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=mns:monitor:{{ $('Avaliar').item.json.session }}:alerted",
+        "value": "true",
+        "expire": true,
+        "ttl": 86400
+      },
+      "id": "setalert",
+      "name": "Redis SET alerted",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1568, 160],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=mns:monitor:{{ $json.session }}:alerted"
+      },
+      "id": "delalert",
+      "name": "Redis DEL alerted",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1344, 320],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "id": "noop",
+      "name": "Sem mudança",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1344, 464]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=<SUPABASE_URL>/rest/v1/tenant_channels?tenant_id=eq.{{ $json.tenant_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.patch) }}",
+        "options": {}
+      },
+      "id": "85c75bff-3460-4980-a2d1-9adc228c15c0",
+      "name": "PATCH estado canal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1104, 520],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "<WAHA_URL>/api/sendText",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ session: '<ALERT_SESSION>', chatId: '<ALERT_CHAT_ID>', text: '🔴 Sessão WAHA caiu: ' + $('Avaliar').item.json.session + ' (status ' + $('Avaliar').item.json.status + ') às ' + $now.setZone('America/Sao_Paulo').toFormat('dd/MM HH:mm') + '. Painel: <DASHBOARD_URL>/superadmin' }) }}",
+        "options": {}
+      },
+      "id": "99bdf888-bb2d-40d7-b30b-e37888142a06",
+      "name": "Avisar queda (Bosco)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1792, 160],
+      "notes": "Aviso ativo de queda. Sai pela sessao <ALERT_SESSION>, NUNCA pela sessao que caiu. Erro aqui nao trava o monitor.",
+      "notesInFlow": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "<WAHA_URL>/api/sendText",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ session: '<ALERT_SESSION>', chatId: '<ALERT_CHAT_ID>', text: '✅ Sessão WAHA voltou: ' + $('Avaliar').item.json.session + ' às ' + $now.setZone('America/Sao_Paulo').toFormat('dd/MM HH:mm') + '.' }) }}",
+        "options": {}
+      },
+      "id": "325435d1-a592-4577-8b63-4c25e9000fba",
+      "name": "Avisar volta (Bosco)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1568, 320],
+      "notes": "Aviso de recuperacao, par do 'Avisar queda'. So dispara se houve alerta antes (chave alerted no Redis).",
+      "notesInFlow": true,
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "A cada 5 min": { "main": [[{ "node": "GET Canais", "type": "main", "index": 0 }]] },
+    "GET Canais": { "main": [[{ "node": "GET Status", "type": "main", "index": 0 }]] },
+    "GET Status": { "main": [[{ "node": "Redis GET alerted", "type": "main", "index": 0 }]] },
+    "Redis GET alerted": { "main": [[{ "node": "Avaliar", "type": "main", "index": 0 }]] },
+    "Avaliar": {
+      "main": [[
+        { "node": "Switch", "type": "main", "index": 0 },
+        { "node": "PATCH estado canal", "type": "main", "index": 0 }
+      ]]
+    },
+    "Switch": {
+      "main": [
+        [{ "node": "POST erro", "type": "main", "index": 0 }],
+        [{ "node": "Redis DEL alerted", "type": "main", "index": 0 }],
+        [{ "node": "Sem mudança", "type": "main", "index": 0 }]
+      ]
+    },
+    "POST erro": { "main": [[{ "node": "Redis SET alerted", "type": "main", "index": 0 }]] },
+    "Redis SET alerted": { "main": [[{ "node": "Avisar queda (Bosco)", "type": "main", "index": 0 }]] },
+    "Redis DEL alerted": { "main": [[{ "node": "Avisar volta (Bosco)", "type": "main", "index": 0 }]] }
+  }
+}
