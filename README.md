@@ -7,11 +7,11 @@
 ![Status](https://img.shields.io/badge/status-in%20production-success)
 ![Stack](https://img.shields.io/badge/stack-Next.js%20%C2%B7%20Supabase%20%C2%B7%20n8n-1f2937)
 ![Multi-tenant](https://img.shields.io/badge/multi--tenant-native%20RLS-8b5cf6)
-![Tests](https://img.shields.io/badge/tests-464-brightgreen)
+![Tests](https://img.shields.io/badge/tests-465-brightgreen)
 
 > 📌 This repository is a technical case study of MNS Control. The source code is closed. Here you'll find the architecture, the technical decisions, and the current state of the project.
 >
-> Last updated: August 19, 2026.
+> Last updated: October 27, 2026.
 
 ---
 
@@ -86,7 +86,7 @@ This was the role that used to be "planned for growth." It isn't anymore. It was
 - **My Leads.** What they brought in themselves.
 - **Profile.** Performance, history, and account settings, behind a three-mode financial gate: no access to any figures, commission only, or full value.
 
-Access control runs on JWT with custom claims. The middleware blocks routes by role, and a shared route like `/agenda` picks which component to render based on the role, on the server. The financial gate was validated with real data across three modes, four screens, two widths, and two themes. In "no access" mode, zero figures appear in any of the sixteen combinations.
+Role and tenant are read from the `users` table on every request, never from metadata the user can edit. The middleware blocks routes by role, and a shared route like `/agenda` picks which component to render based on the role, on the server. The financial gate was validated with real data across three modes, four screens, two widths, and two themes. In "no access" mode, zero figures appear in any of the sixteen combinations.
 
 ---
 
@@ -144,7 +144,7 @@ flowchart TB
 
 ### Multi-tenancy
 
-Isolation through PostgreSQL's native Row-Level Security. Each tenant has a `tenant_id` on all main tables. The RLS policies use two custom functions that read from the JWT:
+Isolation through PostgreSQL's native Row-Level Security. Each tenant has a `tenant_id` on all main tables. The RLS policies use two custom functions that look up the authenticated user (`auth.uid()`) in the `users` table:
 
 - `get_user_tenant_id()` returns the authenticated user's tenant.
 - `get_user_role()` returns the role. SuperAdmin bypasses the tenant filter.
@@ -267,12 +267,12 @@ This isn't a product conversion metric. It's an operational gain inside the agen
 
 First client in production: an upholstery-cleaning business in the Vale do Paraíba region (SP). Running MNS Control since May 16, 2026, with the AI agent (Gisele) integrated into the dashboard.
 
-Numbers pulled from the database on August 19, 2026:
+Numbers pulled from the database on October 27, 2026:
 
-- **290 clients** in the base, **98 of them added in the last 30 days**
-- **34 services** in the cycle, 19 taken end to end through the dashboard
-- **546 dispatches** recorded: confirmation 24h before, reminder 1h before, post-service review request, 90-day re-engagement, cold-lead follow-up, reactivation
-- **940 of 940** post-service review requests sent through the queue, none stuck
+- **415 clients** in the base, **53 of them added in the last 30 days**
+- **60 services** recorded, **26 completed**
+- **61 dispatches** in the queue: 23 post-service review requests, 19 confirmations (24h before) and 19 reminders (1h before)
+- **At most one review request per service**: 23 sent, zero duplicates, guaranteed by a unique index in the database
 
 The combination of AI agent, dashboard, and automations fully replaced the previous model based on WhatsApp commands. The manager runs everything through the screen.
 
@@ -297,7 +297,7 @@ The same reasoning surfaced 19 overdue services, the oldest from June 1st, invis
 
 The previous version of this document said, under conscious technical debt, "no automated tests." That's no longer true.
 
-- **464 automated tests** across 18 files, running in under two seconds
+- **465 automated tests** across 18 files, running in under two seconds
 - **Two design scripts** that fail on token parity and on WCAG contrast
 - The tests caught a **rule** bug, not a typo: a tenant with a registered channel that had never been paired didn't enter the attention queue at all. It would have stayed invisible indefinitely.
 
@@ -322,7 +322,7 @@ Scope discipline is a differentiator. Resisting the temptation to add everything
 - **Drag-and-drop scheduling on the calendar.** The Agenda is read-only with actions through a modal (date, time, confirm). Simpler to maintain, and the flow handles it.
 - **Native mobile app.** The dashboard is responsive and works in the phone's browser, which is the operator's primary device anyway.
 - **A button that doesn't control anything.** The "new client" wizard had a step for connecting WhatsApp by QR code. There was no server-side integration with the channel API to make it real, so the button would only have shown a toast. It got cut, along with "Reconnect" and "Generate QR" elsewhere in the panel. The rule I kept: don't ship a control that doesn't control anything. A fake button is worse than a missing one, because someone will trust it.
-- **External alerting to Telegram or Slack.** The Error Center is already the place. One more channel is one more place to ignore.
+- **External alerting for every error.** Only WhatsApp session drops and recoveries reach me directly, on WhatsApp. Everything else stays in the Error Center. One more noisy channel is one more place to ignore.
 
 ### What still happens outside MNS Control
 
@@ -337,7 +337,7 @@ Scope discipline is a differentiator. Resisting the temptation to add everything
 ### Conscious technical debt
 
 - **No loading skeletons and no error screens.** There are zero of each in the project, and that's what blocks giving the sidebar its prefetch back. It's first on the roadmap for a reason.
-- **The dispatch table has two owners with opposite semantics.** One workflow treats it as a queue: read pending, send, mark sent. That one works, 940 out of 940. Two others ignore the queue, read from the source, and insert a fresh row, leaving expired pending rows behind. Until that's unified, I can't say with full confidence that one specific reminder was delivered.
+- **The dispatch table has two owners with opposite semantics.** One workflow treats it as a queue: read pending, send, mark sent. That one works: 23 review requests for 23 services, no duplicates. Two others ignore the queue, read from the source, and insert a fresh row, leaving expired pending rows behind. Until that's unified, I can't say with full confidence that one specific reminder was delivered.
 - **No dedicated APM** beyond the Error Center. I don't have latency, memory-usage, or throughput metrics.
 
 ### Scenarios where the system doesn't work well
@@ -363,6 +363,19 @@ Scope discipline is a differentiator. Resisting the temptation to add everything
 
 ---
 
+## Samples
+
+Sanitized excerpts from the production code base. Secrets, identifiers and client data were replaced with placeholders.
+
+| File | What it shows | Why it matters |
+|---|---|---|
+| [`db/01_rls_multitenant.sql`](samples/db/01_rls_multitenant.sql) | RLS policies on every business table, using `get_user_role()` and `get_user_tenant_id()`. A trigger blocks users from changing their own role or tenant. | Tenant isolation is done by the database, not the front end. A valid token from another tenant still gets nothing. |
+| [`db/02_trigger_atualizar_status_cliente.sql`](samples/db/02_trigger_atualizar_status_cliente.sql) | A PL/pgSQL trigger that recalculates lead status, client status and totals when a service changes status. | The dashboard, the AI agent and manual edits all end in the same state, because the rule lives in one place. |
+| [`backend/acao-route.ts`](samples/backend/acao-route.ts) | The server-side route that every dashboard action passes through on its way to n8n. | The tenant comes from the session, not from the request body. The webhook URL and secret never reach the browser. |
+| [`n8n/monitor-sessao-waha.json`](samples/n8n/monitor-sessao-waha.json) | The n8n workflow that polls every WhatsApp session every 5 minutes. | Session state is rewritten on every run. The alert is a separate event, deduplicated in Redis, and goes out through a session other than the one that dropped. |
+
+---
+
 ## Stack
 
 - **Frontend.** Next.js 16, React 19, TypeScript, Tailwind 4, Radix, sonner.
@@ -373,8 +386,8 @@ Scope discipline is a differentiator. Resisting the temptation to add everything
 - **Automation.** n8n with 18 active workflows: 1 AI agent (78 nodes), 7 automations, 6 dashboard webhooks, 1 send hub, 1 session monitor, 1 centralized error handler.
 - **Channel.** WAHA self-hosted, one WhatsApp session per tenant, session state polled every 5 minutes.
 - **AI.** OpenAI GPT-4.1-mini for the conversational agent.
-- **Auth.** Supabase Auth with email and password, JWT with custom claims, Next.js middleware redirecting by role, self-hosted password recovery on an authenticated domain (SPF, DKIM, DMARC).
-- **Tests.** Vitest with 464 tests, plus two design scripts that block visual regressions.
+- **Auth.** Supabase Auth with email and password, role and tenant read from the database (never from user-editable metadata), Next.js middleware redirecting by role, self-hosted password recovery on an authenticated domain (SPF, DKIM, DMARC).
+- **Tests.** Vitest with 465 tests, plus two design scripts that block visual regressions.
 - **Hosting.** Vercel (frontend), VPS with Traefik reverse proxy (n8n, Redis, WAHA).
 - **Observability.** Error Center fed by the n8n Error Handler. No dedicated APM yet.
 
