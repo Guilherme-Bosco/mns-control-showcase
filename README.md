@@ -305,7 +305,7 @@ Tests on business rules turned out to be worth far more than tests on components
 
 ### Service capacity
 
-With the old model, running more than one client in parallel wasn't viable. With MNS Control, the practical limit became my capacity to create WAHA sessions and configure AI agents. A second client is in onboarding.
+With the old model, running more than one client in parallel wasn't viable. With MNS Control, the practical limit became my capacity to create WAHA sessions and configure AI agents. A second tenant is already live in monitoring-only mode: its agent runs in production and the agency watches its session and errors from the SuperAdmin panel, while that client's own team doesn't use the dashboard yet.
 
 ### Onboarding a new manager
 
@@ -352,11 +352,10 @@ Scope discipline is a differentiator. Resisting the temptation to add everything
 
 1. Loading skeletons and error screens, which unlock giving the menu its prefetch back
 2. Unify the dispatch model around the queue, so delivery is provable per reminder
-3. Project documentation written for a **non-developer** to get oriented after two weeks away, because that's who reopens this project
-4. Second client in production
-5. Per-tenant message templates, editable from the dashboard
-6. Custom domain (`app.mindinshift.com.br`)
-7. Automated billing with a payment gateway, once the data model is ready for it
+3. Second client using the dashboard day to day, not only monitored
+4. Per-tenant message templates, editable from the dashboard
+5. Custom domain (`app.mindinshift.com.br`)
+6. Automated billing with a payment gateway, once the data model is ready for it
 
 > MNS Control is part of the Mind in Shift service, not a product sold separately. Clients hire the agency for the AI-agent implementation plus the monthly operation, and the dashboard comes included as a management tool for their own operation.
 > The multi-tenant architecture already supports licensing to other agencies if demand appears, but that would be a business decision, not a technical one.
